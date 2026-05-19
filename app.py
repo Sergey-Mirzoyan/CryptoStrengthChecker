@@ -50,7 +50,7 @@ TRANS = {
         "test_nist": "NIST SP800-22",
         "test_diehard": "Diehard Tests",
         "test_avalanche": "Avalanche Test (Requires 2 files)",
-        "results_nn": "🧠 Neural Network Analysis",
+        "results_nn": "🧠 Combined Assessment Method",
         "results_stat": "📊 Statistical Analysis (Chi-Square)",
         "results_nist": "📋 NIST SP800-22 Results",
         "results_diehard": "🎲 Diehard Results",
@@ -91,7 +91,7 @@ TRANS = {
         "test_nist": "NIST SP800-22",
         "test_diehard": "Тесты Diehard",
         "test_avalanche": "Лавинный тест (Нужно 2 файла)",
-        "results_nn": "🧠 Нейросетевой анализ",
+        "results_nn": "🧠 Комбинированный метод оценки",
         "results_stat": "📊 Статистический анализ (Хи-квадрат)",
         "results_nist": "📋 Результаты NIST SP800-22",
         "results_diehard": "🎲 Результаты Diehard",
@@ -163,46 +163,113 @@ if uploaded_file is not None:
                 if use_nn_stat:
                     results = analysis.run_full_analysis(sequence, window_sizes)
                     if results:
-                        # NN Results
                         st.header(T["results_nn"])
-                        nn_results = results['neural_network']
-                        col1, col2 = st.columns(2)
-                        col1.metric(T["accuracy"], f"{nn_results['overall_accuracy']:.2%}")
-                        col2.metric(T["analyzed"], nn_results['total_analyzed'])
                         
-                        # Detailed NN results table
-                        if nn_results.get('details'):
-                            df_nn = pd.DataFrame(nn_results['details'])
-                            # Keep only relevant columns for display
-                            cols = ['window_size', 'direction', 'bits_analyzed', 'accuracy']
-                            df_nn_display = df_nn[cols]
-                            st.subheader(T["details_nn"] if "details_nn" in T else "NN Details")
-                            st.dataframe(df_nn_display)
+                        tab1, tab2 = st.tabs(["Побитовый анализ (Bitwise)", "Блочный анализ (Blockwise)"])
                         
-                        if nn_results['is_strong']:
-                            st.success(f"✅ {T['strong']} (Accuracy ≤ 55%)")
-                        else:
-                            st.error(f"❌ {T['weak']} (Accuracy > 55%)")
+                        with tab1:
+                            # NN Results Bitwise
+                            nn_results = results['bitwise']['neural_network']
+                            col1, col2 = st.columns(2)
+                            col1.metric(T["accuracy"], f"{nn_results['overall_accuracy']:.2%}")
+                            col2.metric(T["analyzed"], nn_results['total_analyzed'])
                             
-                        # Stat Results
-                        st.header(T["results_stat"])
-                        stat_results = results['statistical']
-                        col1, col2 = st.columns(2)
-                        col1.metric(T["p_value"], f"{stat_results['overall_p_value']:.3f}")
-                        col2.metric(T["tests"], f"{stat_results['total_tests']}")
+                            if nn_results.get('details'):
+                                df_nn = pd.DataFrame(nn_results['details'])
+                                cols = ['window_size', 'direction', 'bits_analyzed', 'accuracy']
+                                st.subheader("NN Summary")
+                                st.dataframe(df_nn[cols])
+                                
+                                flat_nn_bitwise = []
+                                for d in nn_results['details']:
+                                    for p in d['predictions'][:50]:
+                                        flat_nn_bitwise.append({
+                                            'window_size': d['window_size'],
+                                            'direction': d['direction'],
+                                            'window': p['window'],
+                                            'predicted': p['predicted'],
+                                            'actual': p['actual'],
+                                            'correct': p['correct']
+                                        })
+                                if flat_nn_bitwise:
+                                    st.subheader("NN Detailed Predictions (Sample)")
+                                    st.dataframe(pd.DataFrame(flat_nn_bitwise))
+                            
+                            if nn_results['is_strong']:
+                                st.success(f"✅ {T['strong']} (Accuracy ≤ 55%)")
+                            else:
+                                st.error(f"❌ {T['weak']} (Accuracy > 55%)")
+                                
+                            # Stat Results Bitwise
+                            st.subheader(T["results_stat"])
+                            stat_results = results['bitwise']['statistical']
+                            col1, col2 = st.columns(2)
+                            col1.metric(T["p_value"], f"{stat_results['overall_p_value']:.3f}")
+                            col2.metric(T["tests"], f"{stat_results['total_tests']}")
 
-                        if stat_results['is_strong']:
-                            st.success(f"✅ {T['strong']} (P-Value > 0.05)")
-                        else:
-                            st.error(f"❌ {T['weak']} (P-Value ≤ 0.05)")
+                            if stat_results['is_strong']:
+                                st.success(f"✅ {T['strong']} (P-Value > 0.05)")
+                            else:
+                                st.error(f"❌ {T['weak']} (P-Value ≤ 0.05)")
 
-                        # Detailed Chi-square results table
-                        if stat_results.get('details'):
-                            df_stat = pd.DataFrame(stat_results['details'])
-                            cols_stat = ['window_size', 'direction', 'tests', 'avg_chi_square', 'avg_p_value']
-                            df_stat_display = df_stat[cols_stat]
-                            st.subheader(T["details_stat"] if "details_stat" in T else "Statistical Details")
-                            st.dataframe(df_stat_display)
+                            if stat_results.get('details'):
+                                df_stat = pd.DataFrame(stat_results['details'])
+                                cols_stat = ['window_size', 'direction', 'tests', 'avg_chi_square', 'avg_p_value']
+                                st.subheader("Statistical Summary")
+                                st.dataframe(df_stat[cols_stat])
+                                
+                                flat_stat_bitwise = []
+                                for d in stat_results['details']:
+                                    for p in d['predictions'][:50]:
+                                        flat_stat_bitwise.append({
+                                            'window_size': d['window_size'],
+                                            'direction': d['direction'],
+                                            'window': p['window'],
+                                            'actual': p['actual'],
+                                            'chi_square': p['chi_square'],
+                                            'p_value': p['p_value']
+                                        })
+                                if flat_stat_bitwise:
+                                    st.subheader("Statistical Detailed Predictions (Sample)")
+                                    st.dataframe(pd.DataFrame(flat_stat_bitwise))
+                                
+                        with tab2:
+                            # NN Results Blockwise
+                            b_nn_results = results['block']['neural_network']
+                            col1, col2 = st.columns(2)
+                            col1.metric(T["accuracy"], f"{b_nn_results['overall_accuracy']:.2%}")
+                            col2.metric(T["analyzed"], b_nn_results['total_analyzed'])
+                            
+                            if b_nn_results.get('details'):
+                                df_nn_b = pd.DataFrame(b_nn_results['details'])
+                                cols_b = ['window_size', 'direction', 'window', 'predicted', 'actual', 'accuracy']
+                                df_nn_display_b = df_nn_b[cols_b]
+                                st.subheader("NN Details")
+                                st.dataframe(df_nn_display_b)
+                            
+                            if b_nn_results['is_strong']:
+                                st.success(f"✅ {T['strong']} (Accuracy ≤ 55%)")
+                            else:
+                                st.error(f"❌ {T['weak']} (Accuracy > 55%)")
+                                
+                            # Stat Results Blockwise
+                            st.subheader(T["results_stat"])
+                            b_stat_results = results['block']['statistical']
+                            col1, col2 = st.columns(2)
+                            col1.metric(T["p_value"], f"{b_stat_results['overall_p_value']:.3f}")
+                            col2.metric(T["tests"], f"{b_stat_results['total_tests']}")
+
+                            if b_stat_results['is_strong']:
+                                st.success(f"✅ {T['strong']} (P-Value > 0.05)")
+                            else:
+                                st.error(f"❌ {T['weak']} (P-Value ≤ 0.05)")
+
+                            if b_stat_results.get('details'):
+                                df_stat_b = pd.DataFrame(b_stat_results['details'])
+                                cols_stat_b = ['window_size', 'direction', 'window', 'predicted', 'actual', 'chi_square', 'p_value']
+                                df_stat_display_b = df_stat_b[cols_stat_b]
+                                st.subheader("Statistical Details")
+                                st.dataframe(df_stat_display_b)
 
                 # 2. NIST SP800-22
                 if use_nist:
@@ -351,8 +418,16 @@ with st.expander("⚙️ " + ("Настройки Генератора" if lang_
 
 
 
+if "gen_bit_string" not in st.session_state:
+    st.session_state["gen_bit_string"] = None
+if "gen_seq_a" not in st.session_state:
+    st.session_state["gen_seq_a"] = None
+if "gen_seq_b" not in st.session_state:
+    st.session_state["gen_seq_b"] = None
+
 if st.button("🚀 " + ("Сгенерировать" if lang_code == "ru" else "Generate")):
     
+
     seed_val = seed_input
     bit_string = ""
     
@@ -440,8 +515,10 @@ if st.button("🚀 " + ("Сгенерировать" if lang_code == "ru" else "
                 else:
                     st.error(f"❌ {T['weak']}")
             
-            st.download_button("Download Sequence A", seq_a, "seq_a.txt")
-            st.download_button("Download Sequence B", seq_b, "seq_b.txt")
+            
+            st.session_state["gen_seq_a"] = seq_a
+            st.session_state["gen_seq_b"] = seq_b
+            st.session_state["gen_bit_string"] = seq_a
 
         else:
             # Standard Generation with Animation
@@ -469,7 +546,9 @@ if st.button("🚀 " + ("Сгенерировать" if lang_code == "ru" else "
                 time.sleep(1.0 / prng_fps)
                 
             bit_string, _ = my_prng.generate(0, extract_mode=extract_mode_key)
-            
+            st.session_state["gen_bit_string"] = bit_string
+            st.session_state["gen_seq_a"] = None
+            st.session_state["gen_seq_b"] = None
     else:
         # Other Generators
         with st.spinner(f"Generating with {selected_gen}..."):
@@ -488,92 +567,183 @@ if st.button("🚀 " + ("Сгенерировать" if lang_code == "ru" else "
             elif selected_gen == "LFSR (Weak)":
                 gen = LFSRGenerator(seed_val)
             
-            bit_string = gen.generate(gen_length)
             
+            bit_string = gen.generate(gen_length)
+            st.session_state["gen_bit_string"] = bit_string
+            st.session_state["gen_seq_a"] = None
+            st.session_state["gen_seq_b"] = None
+
+if st.session_state.get("gen_bit_string"):
+    bit_string = st.session_state["gen_bit_string"]
+    
     st.success(f"Generated {len(bit_string)} bits!")
     st.text_area("Output Sequence", bit_string[:500] + "..." if len(bit_string) > 500 else bit_string, height=100)
     st.download_button("Download Sequence", bit_string, "generated_sequence.txt")
     
+    if st.session_state.get("gen_seq_a") and st.session_state.get("gen_seq_b"):
+        col1, col2 = st.columns(2)
+        with col1:
+            st.download_button("Download Sequence A", st.session_state["gen_seq_a"], "seq_a.txt")
+        with col2:
+            st.download_button("Download Sequence B", st.session_state["gen_seq_b"], "seq_b.txt")
+    
     # Direct testing button
     st.markdown("---")
-    test_generated = st.checkbox("🧪 " + ("Проверить эту последовательность" if lang_code == "ru" else "Test This Sequence"))
+    st.subheader("🔬 " + ("Тестирование сгенерированной последовательности" if lang_code == "ru" else "Testing Generated Sequence"))
+        
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        test_nn_stat_gen = st.checkbox(T["test_nn_stat"], value=True, key="gen_nn_stat")
+    with col2:
+        test_nist_gen = st.checkbox(T["test_nist"], key="gen_nist")
+    with col3:
+        test_diehard_gen = st.checkbox(T["test_diehard"], key="gen_diehard")
     
-    if test_generated:
-        st.subheader("🔬 " + ("Тестирование сгенерированной последовательности" if lang_code == "ru" else "Testing Generated Sequence"))
+    if st.button("▶️ " + ("Проверить эту последовательность" if lang_code == "ru" else "Test This Sequence")):
+        sequence = [int(b) for b in bit_string]
         
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            test_nn_stat_gen = st.checkbox(T["test_nn_stat"], value=True, key="gen_nn_stat")
-        with col2:
-            test_nist_gen = st.checkbox(T["test_nist"], key="gen_nist")
-        with col3:
-            test_diehard_gen = st.checkbox(T["test_diehard"], key="gen_diehard")
-        
-        if st.button("▶️ " + ("Запустить тесты" if lang_code == "ru" else "Run Tests")):
-            sequence = [int(b) for b in bit_string]
-            
-            with st.spinner(T["analyzing"]):
-                # Neural Network & Statistical
-                if test_nn_stat_gen:
-                    results = analysis.run_full_analysis(sequence, window_sizes)
-                    if results:
-                        st.header(T["results_nn"])
-                        nn_results = results['neural_network']
+        with st.spinner(T["analyzing"]):
+            # Neural Network & Statistical
+            if test_nn_stat_gen:
+                results = analysis.run_full_analysis(sequence, window_sizes)
+                if results:
+                    st.header(T["results_nn"])
+                    
+                    tab1, tab2 = st.tabs(["Побитовый анализ (Bitwise)", "Блочный анализ (Blockwise)"])
+                    
+                    with tab1:
+                        nn_results = results['bitwise']['neural_network']
                         col1, col2 = st.columns(2)
                         col1.metric(T["accuracy"], f"{nn_results['overall_accuracy']:.2%}")
                         col2.metric(T["analyzed"], nn_results['total_analyzed'])
-                        
+                        if nn_results.get('details'):
+                            df_nn = pd.DataFrame(nn_results['details'])
+                            cols = ['window_size', 'direction', 'bits_analyzed', 'accuracy']
+                            st.subheader("NN Summary")
+                            st.dataframe(df_nn[cols])
+                            
+                            flat_nn_bitwise = []
+                            for d in nn_results['details']:
+                                for p in d['predictions'][:50]:
+                                    flat_nn_bitwise.append({
+                                        'window_size': d['window_size'],
+                                        'direction': d['direction'],
+                                        'window': p['window'],
+                                        'predicted': p['predicted'],
+                                        'actual': p['actual'],
+                                        'correct': p['correct']
+                                    })
+                            if flat_nn_bitwise:
+                                st.subheader("NN Detailed Predictions (Sample)")
+                                st.dataframe(pd.DataFrame(flat_nn_bitwise))
+                                
                         if nn_results['is_strong']:
                             st.success(f"✅ {T['strong']} (Accuracy ≤ 55%)")
                         else:
                             st.error(f"❌ {T['weak']} (Accuracy > 55%)")
                         
-                        st.header(T["results_stat"])
-                        stat_results = results['statistical']
+                        st.subheader(T["results_stat"])
+                        stat_results = results['bitwise']['statistical']
                         col1, col2 = st.columns(2)
                         col1.metric(T["p_value"], f"{stat_results['overall_p_value']:.3f}")
                         
+                        if stat_results.get('details'):
+                            df_stat = pd.DataFrame(stat_results['details'])
+                            cols_stat = ['window_size', 'direction', 'tests', 'avg_chi_square', 'avg_p_value']
+                            st.subheader("Statistical Summary")
+                            st.dataframe(df_stat[cols_stat])
+                            
+                            flat_stat_bitwise = []
+                            for d in stat_results['details']:
+                                for p in d['predictions'][:50]:
+                                    flat_stat_bitwise.append({
+                                        'window_size': d['window_size'],
+                                        'direction': d['direction'],
+                                        'window': p['window'],
+                                        'actual': p['actual'],
+                                        'chi_square': p['chi_square'],
+                                        'p_value': p['p_value']
+                                    })
+                            if flat_stat_bitwise:
+                                st.subheader("Statistical Detailed Predictions (Sample)")
+                                st.dataframe(pd.DataFrame(flat_stat_bitwise))
+                                
                         if stat_results['is_strong']:
                             st.success(f"✅ {T['strong']} (P-Value > 0.05)")
                         else:
                             st.error(f"❌ {T['weak']} (P-Value ≤ 0.05)")
-                
-                # NIST SP800-22
-                if test_nist_gen:
-                    st.header(T["results_nist"])
-                    with tempfile.NamedTemporaryFile(mode='w+', delete=False) as tmp:
-                        tmp.write(bit_string)
-                        tmp_path = tmp.name
-                    
-                    try:
-                        from io import StringIO
-                        old_stdout = sys.stdout
-                        sys.stdout = mystdout = StringIO()
-                        runrun(tmp_path)
-                        sys.stdout = old_stdout
-                        nist_output = mystdout.getvalue()
-                        st.text(nist_output)
+                            
+                    with tab2:
+                        b_nn_results = results['block']['neural_network']
+                        col1, col2 = st.columns(2)
+                        col1.metric(T["accuracy"], f"{b_nn_results['overall_accuracy']:.2%}")
+                        col2.metric(T["analyzed"], b_nn_results['total_analyzed'])
                         
-                        pass_count = nist_output.count("PASS")
-                        fail_count = nist_output.count("FAIL")
-                        st.metric(T["tests_passed"], f"{pass_count} / {pass_count + fail_count}")
-                    except Exception as e:
-                        st.error(f"NIST Error: {e}")
-                    finally:
-                        os.unlink(tmp_path)
+                        if b_nn_results.get('details'):
+                            df_nn_b = pd.DataFrame(b_nn_results['details'])
+                            cols_b = ['window_size', 'direction', 'window', 'predicted', 'actual', 'accuracy']
+                            df_nn_display_b = df_nn_b[cols_b]
+                            st.subheader("NN Details")
+                            st.dataframe(df_nn_display_b)
+                            
+                        if b_nn_results['is_strong']:
+                            st.success(f"✅ {T['strong']} (Accuracy ≤ 55%)")
+                        else:
+                            st.error(f"❌ {T['weak']} (Accuracy > 55%)")
+                        
+                        st.subheader(T["results_stat"])
+                        b_stat_results = results['block']['statistical']
+                        col1, col2 = st.columns(2)
+                        col1.metric(T["p_value"], f"{b_stat_results['overall_p_value']:.3f}")
+                        
+                        if b_stat_results.get('details'):
+                            df_stat_b = pd.DataFrame(b_stat_results['details'])
+                            cols_stat_b = ['window_size', 'direction', 'window', 'predicted', 'actual', 'chi_square', 'p_value']
+                            df_stat_display_b = df_stat_b[cols_stat_b]
+                            st.subheader("Statistical Details")
+                            st.dataframe(df_stat_display_b)
+                            
+                        if b_stat_results['is_strong']:
+                            st.success(f"✅ {T['strong']} (P-Value > 0.05)")
+                        else:
+                            st.error(f"❌ {T['weak']} (P-Value ≤ 0.05)")
+            
+            # NIST SP800-22
+            if test_nist_gen:
+                st.header(T["results_nist"])
+                with tempfile.NamedTemporaryFile(mode='w+', delete=False) as tmp:
+                    tmp.write(bit_string)
+                    tmp_path = tmp.name
                 
-                # Diehard
-                if test_diehard_gen:
-                    st.header(T["results_diehard"])
-                    try:
-                        diehard_result = run_dieharder(bit_string)
-                        st.subheader(diehard_result['summary'])
-                        if 'details' in diehard_result:
-                            details = diehard_result['details']
-                            if isinstance(details, list):
-                                df = pd.DataFrame(details)
-                                st.dataframe(df)
-                            else:
-                                st.write(details)
-                    except Exception as e:
-                        st.error(f"Diehard Error: {e}")
+                try:
+                    from io import StringIO
+                    old_stdout = sys.stdout
+                    sys.stdout = mystdout = StringIO()
+                    runrun(tmp_path)
+                    sys.stdout = old_stdout
+                    nist_output = mystdout.getvalue()
+                    st.text(nist_output)
+                    
+                    pass_count = nist_output.count("PASS")
+                    fail_count = nist_output.count("FAIL")
+                    st.metric(T["tests_passed"], f"{pass_count} / {pass_count + fail_count}")
+                except Exception as e:
+                    st.error(f"NIST Error: {e}")
+                finally:
+                    os.unlink(tmp_path)
+            
+            # Diehard
+            if test_diehard_gen:
+                st.header(T["results_diehard"])
+                try:
+                    diehard_result = run_dieharder(bit_string)
+                    st.subheader(diehard_result['summary'])
+                    if 'details' in diehard_result:
+                        details = diehard_result['details']
+                        if isinstance(details, list):
+                            df = pd.DataFrame(details)
+                            st.dataframe(df)
+                        else:
+                            st.write(details)
+                except Exception as e:
+                    st.error(f"Diehard Error: {e}")
