@@ -22,3 +22,5 @@ ENV/
 sample_avalanche_*.txt
 zombie_test.png
 stats/
+test_results/
+mass_test_results/

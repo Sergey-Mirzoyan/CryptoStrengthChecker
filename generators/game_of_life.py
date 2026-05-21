@@ -2,6 +2,9 @@ import random
 import numpy as np
 import time
 import timeit
+import sys
+sys.set_int_max_str_digits(0)
+
 from .base import BasePRNG
 
 class GameOfLifePRNG(BasePRNG):
@@ -119,8 +122,14 @@ class GameOfLifePRNG(BasePRNG):
                 best_row_idx = i
                 
         best_row = self.current_field[best_row_idx]
-        binary_row = np.where(best_row > 0, 1, 0)
-        return "".join(map(str, binary_row))
+        ternary_str = "".join(map(str, best_row))
+        try:
+            val = int(ternary_str, 3)
+            if val > 0:
+                return bin(val)[2:]
+            return "0"
+        except ValueError:
+            return ""
 
     def extract_sequence_ternary(self):
         """Extracts a large sequence by treating each row as a ternary number."""
@@ -152,8 +161,15 @@ class GameOfLifePRNG(BasePRNG):
         elif extract_mode == "best_line":
             bit_string = self._extract_best_line()
         else:
-            binary_grid = np.where(self.current_field > 0, 1, 0)
-            flat_bits = binary_grid.flatten()
-            bit_string = "".join(map(str, flat_bits))
+            flat_bits = self.current_field.flatten()
+            ternary_str = "".join(map(str, flat_bits))
+            try:
+                val = int(ternary_str, 3)
+                if val > 0:
+                    bit_string = bin(val)[2:]
+                else:
+                    bit_string = "0"
+            except ValueError:
+                bit_string = ""
         
         return bit_string, history

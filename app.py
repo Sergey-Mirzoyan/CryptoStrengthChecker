@@ -158,10 +158,14 @@ if uploaded_file is not None:
         
         if st.sidebar.button(T["run_analysis"]):
             with st.spinner(T["analyzing"]):
+                results_data = None
+                nist_output_data = None
+                diehard_output_data = None
                 
                 # 1. Neural Network & Statistical
                 if use_nn_stat:
                     results = analysis.run_full_analysis(sequence, window_sizes)
+                    results_data = results
                     if results:
                         st.header(T["results_nn"])
                         
@@ -288,12 +292,19 @@ if uploaded_file is not None:
                         
                         sys.stdout = old_stdout
                         nist_output = mystdout.getvalue()
+                        nist_output_data = nist_output
                         st.text(nist_output)
                         
                         # Simple parsing of "PASS" count
-                        pass_count = nist_output.count("PASS")
-                        fail_count = nist_output.count("FAIL")
-                        st.metric(T["tests_passed"], f"{pass_count} / {pass_count + fail_count}")
+                        if "SUMMARY" in nist_output:
+                            summary_lines = nist_output.split("SUMMARY")[-1].strip().split('\n')
+                            pass_count = sum(1 for line in summary_lines if "PASS" in line)
+                            total_count = sum(1 for line in summary_lines if "PASS" in line or "FAIL" in line or "ERROR" in line)
+                        else:
+                            pass_count = nist_output.count("PASS")
+                            fail_count = nist_output.count("FAIL")
+                            total_count = pass_count + fail_count
+                        st.metric(T["tests_passed"], f"{pass_count} / {total_count}")
                         
                     except Exception as e:
                         st.error(f"NIST Error: {e}")
@@ -307,6 +318,7 @@ if uploaded_file is not None:
                         # Dieharder expects string of bits
                         bitstring = "".join(map(str, sequence))
                         diehard_result = run_dieharder(bitstring)
+                        diehard_output_data = diehard_result
                         
                         st.subheader(diehard_result['summary'])
                         
@@ -354,6 +366,14 @@ if uploaded_file is not None:
                             st.error(T["error_file"])
                     else:
                         st.warning("Please upload the second file for Avalanche Test")
+                
+                if any([results_data, nist_output_data, diehard_output_data]):
+                    try:
+                        from save_utils import save_test_results
+                        save_path = save_test_results(results_data, nist_output_data, diehard_output_data, "File", uploaded_file.name, 0, None)
+                        st.success(f"💾 Results saved to {save_path}")
+                    except Exception as e:
+                        st.error(f"Error saving results: {e}")
 
     else:
         st.error(T["error_file"])
@@ -368,6 +388,14 @@ with st.expander("⚙️ " + ("Настройки Генератора" if lang_
     # Generator Selection
     gen_options = ["Game of Life", "BBS", "AES (CTR)", "Magma (GOST)", "Kuznechik (GOST)", "SM4", "Mersenne Twister (Weak)", "LFSR (Weak)"]
     selected_gen = st.selectbox("Generator Algorithm / Алгоритм", gen_options)
+    
+    # Defaults for Game of Life to prevent NameError in Mass Verification
+    prng_width = 50
+    prng_height = 50
+    prng_steps = 10
+    boundary_mode_key = "toroid"
+    extract_mode_key = "ternary"
+    gen_length = 20000
     
     # Common Settings
     seed_input = st.number_input("Seed (Optional)", value=0, help="Leave 0 for random seed")
@@ -449,56 +477,59 @@ if st.button("🚀 " + ("Сгенерировать" if lang_code == "ru" else "
             st.write(f"Seed A: {seed_val}")
             st.write(f"Seed B: {seed_b}")
             
-            # Visualization
-            st.subheader("📊 " + ("Визуализация До-После" if lang_code == "ru" else "Before/After Visualization"))
-            
-            def field_to_rgb(field):
-                rgb = np.zeros((field.shape[0], field.shape[1], 3), dtype=np.uint8)
-                rgb[field == 1] = [0, 255, 0] # Green
-                rgb[field == 2] = [255, 0, 0] # Red
-                return rgb
-            
-            initial_a = history_a[0]
-            final_a = history_a[-1]
-            initial_b = history_b[0]
-            final_b = history_b[-1]
-            
-            img_width = 250
-            
-            # Sequence A
-            st.markdown("### Sequence A")
-            col_a1, col_a2 = st.columns(2)
-            with col_a1:
-                st.caption(f"До (Step 0)")
-                st.image(field_to_rgb(initial_a), width=img_width, clamp=True)
-            with col_a2:
-                st.caption(f"После (Step {prng_steps})")
-                st.image(field_to_rgb(final_a), width=img_width, clamp=True)
-            
-            # Sequence B
-            st.markdown("### Sequence B")
-            col_b1, col_b2 = st.columns(2)
-            with col_b1:
-                st.caption(f"До (Step 0)")
-                st.image(field_to_rgb(initial_b), width=img_width, clamp=True)
-            with col_b2:
-                st.caption(f"После (Step {prng_steps})")
-                st.image(field_to_rgb(final_b), width=img_width, clamp=True)
-            
-            # Difference
-            st.markdown("### " + ("Разница" if lang_code == "ru" else "Difference"))
-            col_diff1, col_diff2 = st.columns(2)
-            with col_diff1:
-                st.caption("Initial Difference")
-                diff_initial = (initial_a != initial_b).astype(np.uint8) * 255
-                diff_rgb_initial = np.stack([diff_initial]*3, axis=-1)
-                st.image(diff_rgb_initial, width=img_width, clamp=True)
+            if prng_width > 1000 or prng_height > 1000 or prng_width / prng_height > 100 or prng_height / prng_width > 100:
+                st.warning("⚠️ " + ("Визуализация отключена для слишком больших или несбалансированных сеток." if lang_code == "ru" else "Visualization is disabled for very large or unbalanced grids."))
+            else:
+                # Visualization
+                st.subheader("📊 " + ("Визуализация До-После" if lang_code == "ru" else "Before/After Visualization"))
                 
-            with col_diff2:
-                st.caption("Final Difference")
-                diff_final = (final_a != final_b).astype(np.uint8) * 255
-                diff_rgb_final = np.stack([diff_final]*3, axis=-1)
-                st.image(diff_rgb_final, width=img_width, clamp=True)
+                def field_to_rgb(field):
+                    rgb = np.zeros((field.shape[0], field.shape[1], 3), dtype=np.uint8)
+                    rgb[field == 1] = [0, 255, 0] # Green
+                    rgb[field == 2] = [255, 0, 0] # Red
+                    return rgb
+                
+                initial_a = history_a[0]
+                final_a = history_a[-1]
+                initial_b = history_b[0]
+                final_b = history_b[-1]
+                
+                img_width = 250
+                
+                # Sequence A
+                st.markdown("### Sequence A")
+                col_a1, col_a2 = st.columns(2)
+                with col_a1:
+                    st.caption(f"До (Step 0)")
+                    st.image(field_to_rgb(initial_a), width=img_width, clamp=True, output_format="PNG")
+                with col_a2:
+                    st.caption(f"После (Step {prng_steps})")
+                    st.image(field_to_rgb(final_a), width=img_width, clamp=True, output_format="PNG")
+                
+                # Sequence B
+                st.markdown("### Sequence B")
+                col_b1, col_b2 = st.columns(2)
+                with col_b1:
+                    st.caption(f"До (Step 0)")
+                    st.image(field_to_rgb(initial_b), width=img_width, clamp=True, output_format="PNG")
+                with col_b2:
+                    st.caption(f"После (Step {prng_steps})")
+                    st.image(field_to_rgb(final_b), width=img_width, clamp=True, output_format="PNG")
+                
+                # Difference
+                st.markdown("### " + ("Разница" if lang_code == "ru" else "Difference"))
+                col_diff1, col_diff2 = st.columns(2)
+                with col_diff1:
+                    st.caption("Initial Difference")
+                    diff_initial = (initial_a != initial_b).astype(np.uint8) * 255
+                    diff_rgb_initial = np.stack([diff_initial]*3, axis=-1)
+                    st.image(diff_rgb_initial, width=img_width, clamp=True, output_format="PNG")
+                    
+                with col_diff2:
+                    st.caption("Final Difference")
+                    diff_final = (final_a != final_b).astype(np.uint8) * 255
+                    diff_rgb_final = np.stack([diff_final]*3, axis=-1)
+                    st.image(diff_rgb_final, width=img_width, clamp=True, output_format="PNG")
                 
             bit_string = seq_a
             
@@ -522,30 +553,35 @@ if st.button("🚀 " + ("Сгенерировать" if lang_code == "ru" else "
 
         else:
             # Standard Generation with Animation
-            st.subheader("Visualization")
-            image_placeholder = st.empty()
-            
-            # Initialize PRNG
             my_prng = GameOfLifePRNG(prng_width, prng_height, seed_val, boundary_mode=boundary_mode_key)
             
-            def get_image(field):
-                rgb_field = np.zeros((prng_height, prng_width, 3), dtype=np.uint8)
-                rgb_field[field == 1] = [0, 255, 0]
-                rgb_field[field == 2] = [255, 0, 0]
-                return rgb_field
+            if prng_width > 1000 or prng_height > 1000 or prng_width / prng_height > 100 or prng_height / prng_width > 100:
+                st.warning("⚠️ " + ("Визуализация отключена для слишком больших или несбалансированных сеток." if lang_code == "ru" else "Visualization is disabled for very large or unbalanced grids."))
+                with st.spinner("Generating..."):
+                    bit_string, _ = my_prng.generate(prng_steps, extract_mode=extract_mode_key)
+            else:
+                st.subheader("Visualization")
+                image_placeholder = st.empty()
+                
+                def get_image(field):
+                    rgb_field = np.zeros((prng_height, prng_width, 3), dtype=np.uint8)
+                    rgb_field[field == 1] = [0, 255, 0]
+                    rgb_field[field == 2] = [255, 0, 0]
+                    return rgb_field
 
-            current_field = my_prng.current_field
-            anim_width = 400
-            image_placeholder.image(get_image(current_field), caption="Step 0", width=anim_width)
-            time.sleep(1.0 / prng_fps)
-            
-            for step in range(1, prng_steps + 1):
-                my_prng.step()
                 current_field = my_prng.current_field
-                image_placeholder.image(get_image(current_field), caption=f"Step {step}", width=anim_width)
+                anim_width = 400
+                image_placeholder.image(get_image(current_field), caption="Step 0", width=anim_width, output_format="PNG")
                 time.sleep(1.0 / prng_fps)
                 
-            bit_string, _ = my_prng.generate(0, extract_mode=extract_mode_key)
+                for step in range(1, prng_steps + 1):
+                    my_prng.step()
+                    current_field = my_prng.current_field
+                    image_placeholder.image(get_image(current_field), caption=f"Step {step}", width=anim_width, output_format="PNG")
+                    time.sleep(1.0 / prng_fps)
+                    
+                bit_string, _ = my_prng.generate(0, extract_mode=extract_mode_key)
+                
             st.session_state["gen_bit_string"] = bit_string
             st.session_state["gen_seq_a"] = None
             st.session_state["gen_seq_b"] = None
@@ -603,9 +639,13 @@ if st.session_state.get("gen_bit_string"):
         sequence = [int(b) for b in bit_string]
         
         with st.spinner(T["analyzing"]):
+            results_data = None
+            nist_output_data = None
+            diehard_output_data = None
             # Neural Network & Statistical
             if test_nn_stat_gen:
                 results = analysis.run_full_analysis(sequence, window_sizes)
+                results_data = results
                 if results:
                     st.header(T["results_nn"])
                     
@@ -722,11 +762,18 @@ if st.session_state.get("gen_bit_string"):
                     runrun(tmp_path)
                     sys.stdout = old_stdout
                     nist_output = mystdout.getvalue()
+                    nist_output_data = nist_output
                     st.text(nist_output)
                     
-                    pass_count = nist_output.count("PASS")
-                    fail_count = nist_output.count("FAIL")
-                    st.metric(T["tests_passed"], f"{pass_count} / {pass_count + fail_count}")
+                    if "SUMMARY" in nist_output:
+                        summary_lines = nist_output.split("SUMMARY")[-1].strip().split('\n')
+                        pass_count = sum(1 for line in summary_lines if "PASS" in line)
+                        total_count = sum(1 for line in summary_lines if "PASS" in line or "FAIL" in line or "ERROR" in line)
+                    else:
+                        pass_count = nist_output.count("PASS")
+                        fail_count = nist_output.count("FAIL")
+                        total_count = pass_count + fail_count
+                    st.metric(T["tests_passed"], f"{pass_count} / {total_count}")
                 except Exception as e:
                     st.error(f"NIST Error: {e}")
                 finally:
@@ -737,6 +784,7 @@ if st.session_state.get("gen_bit_string"):
                 st.header(T["results_diehard"])
                 try:
                     diehard_result = run_dieharder(bit_string)
+                    diehard_output_data = diehard_result
                     st.subheader(diehard_result['summary'])
                     if 'details' in diehard_result:
                         details = diehard_result['details']
@@ -747,3 +795,79 @@ if st.session_state.get("gen_bit_string"):
                             st.write(details)
                 except Exception as e:
                     st.error(f"Diehard Error: {e}")
+            
+            if any([results_data, nist_output_data, diehard_output_data]):
+                try:
+                    from save_utils import save_test_results
+                    gen_w = prng_width if selected_gen == "Game of Life" else gen_length
+                    gen_h = prng_height if selected_gen == "Game of Life" else 0
+                    s = seed_input if selected_gen == "Game of Life" else (seed_input if seed_input is not None else 0)
+                    save_path = save_test_results(results_data, nist_output_data, diehard_output_data, selected_gen, gen_w, gen_h, s)
+                    st.success(f"💾 Results saved to {save_path}")
+                except Exception as e:
+                    st.error(f"Error saving results: {e}")
+
+    # --- Mass Verification Section ---
+    st.markdown("---")
+    st.header("🔁 " + ("Массовая проверка" if lang_code == "ru" else "Mass Verification"))
+    
+    col_iter, col_len, col_run = st.columns([1, 1, 1])
+    with col_iter:
+        mass_iterations = st.number_input("Iterations / Итерации", min_value=1, max_value=100000, value=100)
+    with col_len:
+        mass_length = st.number_input("Sequence Length / Длина (бит)", min_value=128, max_value=1000000, value=1000, step=128)
+    with col_run:
+        st.write("") # spacing
+        st.write("")
+        run_mass_btn = st.button("🚀 " + ("Запустить массовую проверку" if lang_code == "ru" else "Run Mass Verification"))
+
+    if run_mass_btn:
+        with st.spinner("Running Mass Verification for ALL generators..."):
+            
+            from mass_test import run_mass_verification
+            
+            generators_to_test = [
+                (GameOfLifePRNG, {'width': 50, 'height': max(20, mass_length//50 + 1), 'seed': seed_input, 'boundary_mode': 'toroid', 'extract_mode': extract_mode_key, 'steps': prng_steps, 'length': mass_length}),
+                (BBSGenerator, {'seed': seed_input, 'length': mass_length}),
+                (AESGenerator, {'seed': seed_input, 'length': mass_length}),
+                (MagmaGenerator, {'seed': seed_input, 'length': mass_length}),
+                (KuznechikGenerator, {'seed': seed_input, 'length': mass_length}),
+                (SM4Generator, {'seed': seed_input, 'length': mass_length}),
+                (MersenneTwisterGenerator, {'seed': seed_input, 'length': mass_length}),
+                (LFSRGenerator, {'seed': seed_input, 'length': mass_length})
+            ]
+            
+            all_results = []
+            
+            for gen_class, gen_kwargs in generators_to_test:
+                st.subheader(f"Testing {gen_class.__name__}")
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                
+                def update_progress(current, total):
+                    progress = min(current / total, 1.0)
+                    progress_bar.progress(progress)
+                    status_text.text(f"Iteration {current}/{total}")
+
+                final_metrics, res_dir = run_mass_verification(
+                    generator_class=gen_class,
+                    gen_kwargs=gen_kwargs,
+                    iterations=mass_iterations,
+                    window_sizes=window_sizes,
+                    use_nn_stat=True,
+                    use_nist=True,
+                    use_diehard=True,
+                    progress_callback=update_progress
+                )
+                
+                st.success(f"Saved to {res_dir}")
+                
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric("NN Bitwise Acc", f"{final_metrics['nn_stat_averages']['bitwise_acc']:.2%}")
+                col2.metric("Stat Bitwise P-Val", f"{final_metrics['nn_stat_averages']['bitwise_p']:.3f}")
+                col3.metric("NIST Pass Ratio", f"{final_metrics['nist_avg_pass_ratio']:.2%}")
+                col4.metric("Diehard Pass Ratio", f"{final_metrics['diehard_avg_pass_ratio']:.2%}")
+                
+                all_results.append(final_metrics)
+                
+            st.success("🎉 Mass verification for all generators completed!")
